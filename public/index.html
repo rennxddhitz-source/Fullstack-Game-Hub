@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini .IO Game</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; color: #fff; }
+  canvas { display: block; background: #1a1a1a; }
+  #scoreBoard { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.6); padding: 10px 15px; border-radius: 8px; font-size: 16px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="scoreBoard">Score: <span id="score">0</span></div>
+<canvas id="gameCanvas"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+let players = {};
+let foodList = [];
+let myId = null;
+let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+
+window.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+socket.on('connect', () => {
+  myId = socket.id;
+});
+
+socket.on('currentPlayers', (serverPlayers) => {
+  players = serverPlayers;
+});
+
+socket.on('foodList', (serverFood) => {
+  foodList = serverFood;
+});
+
+socket.on('newPlayer', (playerInfo) => {
+  players[playerInfo.id] = playerInfo;
+});
+
+socket.on('playerMoved', (playerInfo) => {
+  if (players[playerInfo.id]) {
+    players[playerInfo.id].x = playerInfo.x;
+    players[playerInfo.id].y = playerInfo.y;
+    players[playerInfo.id].radius = playerInfo.radius;
+    players[playerInfo.id].score = playerInfo.score;
+  }
+});
+
+socket.on('foodUpdate', (serverFood) => {
+  foodList = serverFood;
+});
+
+socket.on('disconnectPlayer', (id) => {
+  delete players[id];
+});
+
+function gameLoop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let me = players[myId];
+  if (me) {
+    let angle = Math.atan2(mouse.y - canvas.height / 2, mouse.x - canvas.width / 2);
+    let speed = 3;
+    me.x += Math.cos(angle) * speed;
+    me.y += Math.sin(angle) * speed;
+
+    socket.emit('playerMovement', { x: me.x, y: me.y });
+
+    ctx.save();
+    ctx.translate(canvas.width / 2 - me.x, canvas.height / 2 - me.y);
+
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= 2000; x += 100) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 2000); ctx.stroke();
+    }
+    for (let y = 0; y <= 2000; y += 100) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(2000, y); ctx.stroke();
+    }
+
+    foodList.forEach(f => {
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    for (let id in players) {
+      let p = players[id];
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(p.name + ` (${p.score})`, p.x, p.y - p.radius - 8);
+    }
+
+    ctx.restore();
+
+    document.getElementById('score').innerText = me.score;
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
